@@ -1,0 +1,27 @@
+<UserControl x:Class="SuperWorkspace.SingleWindowConfigPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#CC000000">
+    <Border Background="#252526" Width="440" Height="360" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="30">
+        <StackPanel>
+            <TextBlock Text="🪟 软件单窗口镜像" Foreground="White" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" HorizontalAlignment="Center"/>
+            
+            <TextBlock Text="选择要投射的软件窗口" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,10"/>
+            <ComboBox x:Name="ComboWindowList" FontSize="14" Height="35" Style="{DynamicResource CyberComboBox}" DisplayMemberPath="Title" Margin="0,0,0,20"/>
+            <TextBlock Text="* 提示：若要投屏或控制【任务管理器】等系统级窗口，请以管理员身份运行本软件。" Foreground="#D83B01" FontSize="11" Margin="0,-10,0,20" TextWrapping="Wrap"/>
+
+            <TextBlock Text="接收设备:" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,10"/>
+            <ComboBox x:Name="ComboSingleWindowTargetDevice" FontSize="14" Height="35" Style="{DynamicResource CyberComboBox}" DisplayMemberPath="Model" Margin="0,0,0,30"/>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="取 消" Background="#444444" Foreground="White" Height="40" FontSize="16" Cursor="Hand" BorderThickness="0" Style="{DynamicResource CyberActionButtonStyle}" Click="Btn_CancelSingleWindowConfig_Click"/>
+                <Button Grid.Column="2" Content="🚀 开启单窗口镜像" Background="#A074E5" Foreground="White" Height="40" FontSize="16" FontWeight="Bold" Cursor="Hand" BorderThickness="0" Style="{DynamicResource PrimaryCyberButtonStyle}" Click="Btn_LaunchSingleWindowMirror_Click"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

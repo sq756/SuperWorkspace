@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<AppSettings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IP>192.168.0.207</IP>
+  <Port>8080</Port>
+  <ScreenshotsSpeed>500</ScreenshotsSpeed>
+  <IsPrivateSession>false</IsPrivateSession>
+  <Username>screen</Username>
+  <Password>task</Password>
+  <SelectedScreenIndex>0</SelectedScreenIndex>
+  <IsShowMouseEnabled>false</IsShowMouseEnabled>
+  <IsAutoStartServerEnabled>false</IsAutoStartServerEnabled>
+  <IsStartMinimizedEnabled>false</IsStartMinimizedEnabled>
+  <ImageQuality>75</ImageQuality>
+</AppSettings>

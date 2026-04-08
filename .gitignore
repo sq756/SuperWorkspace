@@ -1,0 +1,18 @@
+# 忽略编译输出文件夹
+bin/
+obj/
+
+# 忽略 Visual Studio 的本地缓存
+.vs/
+*.user
+*.suo
+
+# 忽略本地临时生成的配置文件和日志
+deck_config.json
+*.log
+
+# 忽略 macOS/Windows 系统级隐藏缓存
+.DS_Store
+Thumbs.db
+Desktop.ini
+SetupBuild/

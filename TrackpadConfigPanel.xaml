@@ -1,0 +1,23 @@
+<UserControl x:Class="SuperWorkspace.TrackpadConfigPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#CC000000">
+    <Border Background="#252526" Width="400" Height="280" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="30">
+        <StackPanel>
+            <TextBlock Text="🪄 虚拟触控板配置" Foreground="White" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" HorizontalAlignment="Center"/>
+            
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                <TextBlock Text="光标移动速度倍率: " Foreground="#AAAAAA" FontSize="14"/>
+                <TextBlock Text="{Binding ElementName=SliderTrackpadSensitivity, Path=Value, StringFormat={}{0:F1}x}" Foreground="#A074E5" FontSize="14" FontWeight="Bold"/>
+            </StackPanel>
+            <Slider x:Name="SliderTrackpadSensitivity" Minimum="0.5" Maximum="5.0" Value="2.5" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,0,0,25"/>
+            <TextBlock Text="* 提示：数值越大光标移动越快。进入面板后，点击顶部标题可自动隐藏手势提示！" Foreground="#666666" FontSize="12" Margin="0,0,0,30" TextWrapping="Wrap"/>
+
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="取 消" Background="#444444" Foreground="White" Height="40" FontSize="16" Cursor="Hand" BorderThickness="0" Click="Btn_CancelTrackpadConfig_Click"/>
+                <Button Grid.Column="2" Content="🚀 开启魔法触控板" Background="#A074E5" Foreground="White" Height="40" FontSize="16" FontWeight="Bold" Cursor="Hand" BorderThickness="0" Style="{DynamicResource PrimaryCyberButtonStyle}" Click="Btn_LaunchVirtualInput_Click"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>
