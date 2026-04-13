@@ -4,28 +4,15 @@
              Background="#CC000000">
     <Border Background="#252526" Width="400" Height="520" CornerRadius="12" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="30">
         <StackPanel>
-            <TextBlock Text="🎥 超级视听采集配置" Foreground="White" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" HorizontalAlignment="Center"/>
+            <TextBlock Text="🎥 超级虚拟相机" Foreground="White" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" HorizontalAlignment="Center"/>
             
-            <TextBlock Text="视频输入源 (完全保护隐私，手机端无画面)" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,5"/>
-            <ComboBox x:Name="ComboCameraSource" SelectedIndex="0" FontSize="14" Height="30" Margin="0,0,0,20">
-                <ComboBoxItem Content="📱 手机前置摄像头 (适合开会)"/>
-                <ComboBoxItem Content="📷 手机后置主摄 (画质最强)"/>
-                <ComboBoxItem Content="🎤 纯麦克风 / KTV 模式 (无延迟拔麦)"/>
-            </ComboBox>
+            <TextBlock Text="产品经理的智慧：让手机做它最擅长的事！" Foreground="#A074E5" FontSize="15" FontWeight="Bold" Margin="0,0,0,15" TextWrapping="Wrap"/>
+            <TextBlock Text="本模式将直接捕获您手机的「屏幕画面」，然后注入到电脑的虚拟摄像头中。" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,10" TextWrapping="Wrap"/>
+            <TextBlock Text="👉 请在启动后，手动打开手机上的「原生相机 App」或「任何带美颜滤镜的 App」，即可将其画面无损推送到电脑！" Foreground="#00BFFF" FontSize="14" FontWeight="Bold" Margin="0,0,0,20" TextWrapping="Wrap"/>
+            <TextBlock Text="⚠️ 注意：电脑端不会采集手机麦克风，请使用电脑自带或外接麦克风！" Foreground="#D83B01" FontSize="12" Margin="0,0,0,20" TextWrapping="Wrap"/>
 
             <Rectangle Height="1" Fill="#333" Margin="0,0,0,15"/>
-            <TextBlock Text="采集画质" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,5"/>
-            <ComboBox x:Name="ComboCameraRes" SelectedIndex="1" FontSize="14" Height="30" Margin="0,0,0,20">
-                <ComboBoxItem Content="720P (流畅开会)"/>
-                <ComboBoxItem Content="1080P (高清录制)"/>
-            </ComboBox>
-
-            <Rectangle Height="1" Fill="#333" Margin="0,0,0,15"/>
-            <TextBlock Text="声音与高级选项" Foreground="#AAAAAA" FontSize="14" Margin="0,0,0,10"/>
-            <CheckBox x:Name="CheckEnableMic" Content="采集手机麦克风 (作为电脑无损输入)" IsChecked="True" Foreground="White" FontSize="14" Margin="0,0,0,15"/>
-            <CheckBox x:Name="CheckCameraScreenOff" Content="启动时手机自动息屏 (荣耀机型慎选)" IsChecked="False" Foreground="White" FontSize="14" Margin="0,0,0,15"/>
-
-            <Button Content="🔧 一键修复/安装系统虚拟摄像头驱动" Background="#333" Foreground="#A074E5" FontWeight="Bold" Height="30" FontSize="13" Cursor="Hand" BorderThickness="0" Margin="0,0,0,20" Click="Btn_InstallDriver_Click"/>
+            <Button Content="🔧 一键修复/安装 SuperWorkspace Camera 驱动" Background="#333" Foreground="#A074E5" FontWeight="Bold" Height="30" FontSize="13" Cursor="Hand" BorderThickness="0" Margin="0,0,0,30" Click="Btn_InstallDriver_Click"/>
 
             <Grid>
                 <Grid.ColumnDefinitions>

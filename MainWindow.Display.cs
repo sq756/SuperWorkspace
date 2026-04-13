@@ -115,6 +115,8 @@ namespace SuperWorkspace
                         int mouseY = mousePos.y - session.OffsetY;
                         if (mouseX >= 0 && mouseX < bitmap.Width && mouseY >= 0 && mouseY < bitmap.Height) System.Windows.Forms.Cursors.Arrow.Draw(g, new System.Drawing.Rectangle(mouseX, mouseY, 32, 32));
 
+                        OnVideoFrameCaptured?.Invoke(bitmap); // 🌟 触发扩展生态的视频流 Hook
+
                         using (var ms = new MemoryStream()) {
                             var encoder = GetEncoder(ImageFormat.Jpeg);
                             var parameters = new EncoderParameters(1);
@@ -195,6 +197,8 @@ namespace SuperWorkspace
                                 System.Windows.Forms.Cursors.Arrow.Draw(g, new System.Drawing.Rectangle(mouseX, mouseY, 32, 32));
                             }
                         }
+
+                        OnVideoFrameCaptured?.Invoke(bitmap); // 🌟 触发扩展生态的视频流 Hook
 
                         using (var ms = new MemoryStream())
                         {

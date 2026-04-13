@@ -25,7 +25,7 @@ namespace SuperWorkspace
 
         private void Btn_LaunchCamera_Click(object sender, RoutedEventArgs e)
         {
-            _main.LaunchCamera(ComboCameraSource.SelectedIndex, ComboCameraRes.SelectedIndex, CheckEnableMic.IsChecked == true, CheckCameraScreenOff.IsChecked == true);
+            _main.LaunchCamera();
         }
     }
 }

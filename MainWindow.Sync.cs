@@ -40,6 +40,7 @@ namespace SuperWorkspace
         {
             WindowInteropHelper wih = new WindowInteropHelper(this);
             RemoveClipboardFormatListener(wih.Handle);
+            RestorePcCursor(); // 🌟 终极保险：进程退出时，若结界尚未关闭，强制恢复系统鼠标
         }
 
         private string SafeGetClipboardText()
@@ -123,16 +124,28 @@ namespace SuperWorkspace
 
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-        [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-        [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-        [DllImport("user32.dll")] private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
 
-        private const int GWL_EXSTYLE = -20;
-        private const int WS_EX_LAYERED = 0x00080000;
-        private const uint LWA_ALPHA = 0x00000002;
         private const int SW_HIDE = 0;
         private const int SW_RESTORE = 9;
+        
+        // 🌟 鼠标黑洞：隐身引擎核心 API
+        [DllImport("user32.dll")] private static extern IntPtr CreateCursor(IntPtr hInst, int xHotSpot, int yHotSpot, int nWidth, int nHeight, byte[] pvANDPlane, byte[] pvXORPlane);
+        [DllImport("user32.dll")] private static extern IntPtr CopyIcon(IntPtr pcur);
+        [DllImport("user32.dll")] private static extern bool SetSystemCursor(IntPtr hcur, uint id);
+        [DllImport("user32.dll")] private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
+        [DllImport("user32.dll")] private static extern bool DestroyCursor(IntPtr hCursor);
+
+        private void HidePcCursor() {
+            byte[] andPlane = new byte[128]; for (int i = 0; i < 128; i++) andPlane[i] = 0xFF; // 全透明掩码
+            byte[] xorPlane = new byte[128]; // 全0
+            IntPtr blankCursor = CreateCursor(IntPtr.Zero, 0, 0, 32, 32, andPlane, xorPlane);
+            uint[] cursors = { 32512, 32513, 32649, 32650, 32515, 32646 }; // 覆盖箭头、文本、手指、加载等常见光标
+            foreach (uint cursor in cursors) SetSystemCursor(CopyIcon(blankCursor), cursor);
+            DestroyCursor(blankCursor);
+        }
+
+        private void RestorePcCursor() { SystemParametersInfo(0x0057, 0, IntPtr.Zero, 0); } // SPI_SETCURSORS 恢复系统默认
 
         private System.Diagnostics.Process? _edgeProcess;
         private IntPtr _edgeHwnd = IntPtr.Zero;
@@ -148,6 +161,7 @@ namespace SuperWorkspace
             {
                 try { _edgeProcess.Kill(); } catch {}
                 _edgeTimer?.Stop();
+                RestorePcCursor(); // 🌟 极其重要：关闭时必须解除鼠标封印！
                 _isMouseOnTablet = false;
                 _edgeHwnd = IntPtr.Zero;
                 StatusText.Text = "状态: 🔮 键鼠穿越已关闭";
@@ -157,6 +171,12 @@ namespace SuperWorkspace
             }
 
             // 🌟 首次点击，启动结界
+            // 🛡️ 第一层：绝对互斥锁，防止与虚拟副屏产生“争夺主权”和“双鼠标”死锁
+            if (_activeDisplaySessions.Count > 0) {
+                ShowCyberMessage("⚠️ 物理冲突阻断", "您正在使用【扩展电脑副屏】模式！\n\nWindows 在副屏模式下已原生接管了边缘滑动的逻辑。若此时强行开启穿越引擎，两个系统会疯狂争夺鼠标控制权，导致严重撕裂。\n\n👉 您直接将鼠标向右滑动即可跨屏，无需开启此结界！");
+                return;
+            }
+
             if (_selectedDevice == null) { ShowCyberMessage("⚠️ 未选择设备", "请先在右侧选择设备！"); return; }
             if (btn != null) btn.Content = "🛑 关闭边缘键鼠穿越";
             
@@ -165,13 +185,20 @@ namespace SuperWorkspace
 
             try {
                 string targetId = _selectedDevice.Id;
+                string args = "";
 
-                // 🌟 使用超低功耗参数启动 Scrcpy，仅用于获取窗口与接收键鼠
-                // -m 480 -b 500K --max-fps 15 (极限省电)
-                // --keyboard=uhid --mouse=uhid (开启原生键鼠体验)
+                // ⚡ 第三层：智能通道选择与音频剥离 (解决占用音频的 Bug)
+                if (!_selectedDevice.IsWireless) {
+                    // 方案 A (有线): 极致底层的纯物理 OTG 模拟，0视频 0音频，性能损耗为 0。
+                    args = $"-s {targetId} --otg --window-title=SW_EdgeCross --window-borderless";
+                } else {
+                    // 方案 A (无线备用): 采用降维打击，强制挂载 --no-audio 彻底解决声音消失的恶性 Bug！
+                    args = $"-s {targetId} --keyboard=uhid --mouse=uhid --no-audio --no-video --window-title=SW_EdgeCross --window-borderless";
+                }
+
                 System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo {
                     FileName = scrcpyPath,
-                    Arguments = $"-s {targetId} --window-title=SW_EdgeCross --keyboard=uhid --mouse=uhid --window-borderless -m 480 -b 500K --max-fps 15",
+                    Arguments = args,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -204,7 +231,7 @@ namespace SuperWorkspace
                 _edgeTimer.Tick += EdgeTimer_Tick;
                 _edgeTimer.Start();
 
-                ShowCyberMessage("🔮 键鼠结界部署完毕", "结界已在后台待命！\n\n👉 请将电脑鼠标【一直向右滑】，撞击主屏幕最右侧边缘，鼠标将瞬间穿越到平板内部！\n👉 在平板中向左滑撞击边缘，即可瞬间回到电脑！\n\n注意：穿越期间如果误按 Alt+Tab 切走焦点，鼠标也会自动弹回电脑。");
+                ShowCyberMessage("🔮 零延迟穿越结界 (Option A) 部署完毕", "底层 UHID / OTG 引擎已成功挂载！占用音频的 Bug 已被彻底剔除。\n\n👉 【进入结界】请将电脑鼠标一直向右滑，撞击屏幕最右侧，鼠标将从 PC 彻底隐身，并物理级注入移动端！\n👉 【返回电脑】由于采用了最原生的接管模式，系统会物理锁定光标。请按一下键盘上的【Alt 键】解除锁定，然后鼠标向左滑撞回边缘，即可瞬间解除隐身并回到 PC！\n\n*(注意：穿越中途若误按 Alt+Tab 切走焦点，也会自动强行召回)*");
                 Card_ZeroSync.Tag = "Active";
 
             } catch (Exception ex) { ShowCyberMessage("❌ 启动异常", ex.Message); }

@@ -108,3 +108,29 @@ namespace MyFirstPlugin
 2. 找到生成的 `.dll` 文件（通常在 `bin\Release\net8.0-windows\` 目录下）。
 3. 将你的 `MyFirstPlugin.dll` 复制到 Super Workspace 软件根目录下的 **`Plugins`** 文件夹中。
 4. **重启 Super Workspace**，在右上角 `➕ 探索更多生态` 面板中，即可看到并享受你的杰作！
+
+---
+
+## 🖼️ 5. 进阶：截获实时视频流 (YOLO / AI 视觉识别)
+
+Super Workspace 在内核层抓取屏幕或手机摄像头画面时，为生态插件提供了一个极其强悍的 **零拷贝视频帧 Hook (`OnVideoFrameCaptured`)**。
+你可以非常轻松地接入 YOLOv8、OpenCV 等计算机视觉库。
+
+```csharp
+public void Start()
+{
+    if (_appContext != null)
+    {
+        // 订阅视频流 Hook (根据刷新率，约每秒 30~120 帧)
+        _appContext.OnVideoFrameCaptured += (bitmap) => 
+        {
+            // ⚠️ 极客警告：
+            // 1. 此代码在后台高频独立线程运行，绝对不能直接操作 UI！
+            // 2. bitmap 对象在下一帧会被主程序复用或释放。如果你需要进行耗时的异步 YOLO 推理，
+            //    必须先克隆它：Bitmap frameForAI = (Bitmap)bitmap.Clone();
+            
+            // TODO: 把 bitmap 丢给你的 OpenCV 或 ML.NET 模型进行目标检测
+        };
+    }
+}
+```

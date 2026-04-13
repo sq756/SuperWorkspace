@@ -42,7 +42,15 @@ namespace SuperWorkspace
         {
             public string Id { get; set; } = "";
             public string Name { get; set; } = "";
-            public string DisplayName => (Name.Contains("CABLE") ? "💎 推荐: " : "🔊 ") + Name;
+            public string DisplayName {
+                get {
+                    // 🌟 智能语义分析：为设备打上专属的极客标签
+                    string n = Name.ToLower();
+                    if (n.Contains("cable") || n.Contains("virtual")) return "💎 [虚拟黑洞] " + Name;
+                    if (n.Contains("蓝牙") || n.Contains("bluetooth") || n.Contains("耳机") || n.Contains("head")) return "🎧 [专属外设] " + Name;
+                    return "🔊 [物理音响] " + Name;
+                }
+            }
         }
 
         // 🌟 核心调优：直接列出所有的物理/虚拟输出声卡，让用户精准选择黑洞！
@@ -70,23 +78,33 @@ namespace SuperWorkspace
 
             // 🌟 利用纯 C# 动态构建一个极其极客的 MVP 进程选择窗口 (不污染原 XAML)
             var mvpWindow = new Window {
-                Title = "MVP 进程级音频雷达",
-                Width = 550, Height = 640, // 🌟 再次拉高窗口，容纳本地监听下拉框！
-                Background = new SolidColorBrush(Color.FromRgb(26, 26, 36)),
+                Title = "MVP 音频矩阵中枢",
+                Width = 560, Height = 680, 
+                Background = new SolidColorBrush(Color.FromRgb(20, 20, 28)), // 🌟 更深邃的背景
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize
             };
 
-            var stack = new StackPanel { Margin = new Thickness(25) };
-            stack.Children.Add(new TextBlock { Text = "🎧 选择要截获的音频通道", Foreground = Brushes.White, FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,5) });
-            stack.Children.Add(new TextBlock { Text = "请直接选择 [VB-Cable] 虚拟声卡通道。并在电脑右下角将音量也切换到该通道，即可实现电脑静音、平板发声的极致体验！", Foreground = Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 15) });
+            var mainStack = new StackPanel { Margin = new Thickness(25) };
+            
+            mainStack.Children.Add(new TextBlock { Text = "🎧 音频重定向引擎", Foreground = Brushes.White, FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,5) });
+            mainStack.Children.Add(new TextBlock { Text = "彻底剥离 PC 与移动端声卡，实现硬件级零延迟串流", Foreground = new SolidColorBrush(Color.FromRgb(0, 202, 114)), FontSize = 12, Margin = new Thickness(0, 0, 0, 20) });
 
+            // ==========================================
+            // 🌟 核心调优：卡片式分层 UI - 模块 1
+            // ==========================================
+            var grp1 = new Border { Background = new SolidColorBrush(Color.FromRgb(30, 30, 38)), CornerRadius = new CornerRadius(8), Padding = new Thickness(15), Margin = new Thickness(0,0,0,15) };
+            var sp1 = new StackPanel();
+            sp1.Children.Add(new TextBlock { Text = "1. 信号截获源 (Capture Source)", Foreground = Brushes.White, FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,8) });
+            sp1.Children.Add(new TextBlock { Text = "👉 请选择 [虚拟黑洞] 通道。并在电脑右下角将系统音量也切换至它，即可实现电脑静音、平板发声！", Foreground = Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) });
+            
             var listBox = new ListBox { 
-                Height = 220, 
-                Background = new SolidColorBrush(Color.FromRgb(20,20,25)), 
+                Height = 160, 
+                Background = new SolidColorBrush(Color.FromRgb(15,15,20)), 
                 Foreground = new SolidColorBrush(Color.FromRgb(0, 202, 114)), 
                 FontFamily = new FontFamily("Consolas"),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(60,60,65)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(50,50,60)),
                 Margin = new Thickness(0,0,0,20) 
             };
 
@@ -98,22 +116,34 @@ namespace SuperWorkspace
             }
             
             listBox.DisplayMemberPath = "DisplayName";
-            stack.Children.Add(listBox);
+            sp1.Children.Add(listBox);
+            grp1.Child = sp1;
+            mainStack.Children.Add(grp1);
 
-            // 🌟 终极扩展：本地同步监听下拉框 (Local Audio Sync Node)
-            stack.Children.Add(new TextBlock { Text = "🔊 本地同步监听音响 (可选)", Foreground = Brushes.White, FontSize = 16, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,5) });
-            var comboLocal = new ComboBox { Height = 35, FontSize = 13, Style = (Style)FindResource("CyberComboBox"), Margin = new Thickness(0,0,0,20) };
-            comboLocal.Items.Add(new AudioDeviceInfo { Id = "", Name = "❌ 无 (仅推送网络)" });
+            // ==========================================
+            // 🌟 核心调优：卡片式分层 UI - 模块 2
+            // ==========================================
+            var grp2 = new Border { Background = new SolidColorBrush(Color.FromRgb(30, 30, 38)), CornerRadius = new CornerRadius(8), Padding = new Thickness(15), Margin = new Thickness(0,0,0,15) };
+            var sp2 = new StackPanel();
+            sp2.Children.Add(new TextBlock { Text = "2. 本地旁路监听 (Local Monitor)", Foreground = Brushes.White, FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,8) });
+            sp2.Children.Add(new TextBlock { Text = "👉 如果想让电脑的物理耳机同时发声，请在这里选择。(虚拟通道已被安全引擎自动隔离，防止啸叫)", Foreground = Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,12) });
+
+            var comboLocal = new ComboBox { Height = 35, FontSize = 13, Style = (Style)FindResource("CyberComboBox") };
+            comboLocal.Items.Add(new AudioDeviceInfo { Id = "", Name = "❌ 无 (完全静音，仅推送至移动端网络)" });
             foreach (var d in devices) {
-                if (!d.Name.Contains("CABLE")) comboLocal.Items.Add(d); // 🧨 核心防御：绝对屏蔽虚拟黑洞自身，防止无限啸叫死循环！
+                string nl = d.Name.ToLower();
+                // 🌟 核心防御修复：忽略大小写，精准屏蔽包含 cable 或 virtual 的设备，彻底击碎 WASAPI 死循环崩溃问题！
+                if (!nl.Contains("cable") && !nl.Contains("virtual")) comboLocal.Items.Add(d); 
             }
             comboLocal.SelectedIndex = 0;
             comboLocal.DisplayMemberPath = "DisplayName";
-            stack.Children.Add(comboLocal);
+            sp2.Children.Add(comboLocal);
+            grp2.Child = sp2;
+            mainStack.Children.Add(grp2);
 
             var btnMode = new Button { 
-                Content = _mvpStreamMode == 0 ? "🎮 当前模式: 电竞 (20ms低延迟)" : "🎵 当前模式: 交响乐 (1秒抗丢包)", 
-                Height = 35, FontSize = 13, FontWeight = FontWeights.Bold,
+                Content = _mvpStreamMode == 0 ? "🎮 当前引擎: 电竞模式 (20ms极低延迟)" : "🎵 当前引擎: 交响乐模式 (1秒抗抖动缓冲)", 
+                Height = 40, FontSize = 14, FontWeight = FontWeights.Bold,
                 Background = new SolidColorBrush(Color.FromRgb(40, 40, 45)),
                 Foreground = _mvpStreamMode == 0 ? Brushes.White : new SolidColorBrush(Color.FromRgb(0, 202, 114)),
                 Margin = new Thickness(0, 0, 0, 20), Cursor = System.Windows.Input.Cursors.Hand
@@ -121,20 +151,20 @@ namespace SuperWorkspace
             btnMode.Click += (s, ev) => {
                 if (_mvpStreamMode == 0) {
                     _mvpStreamMode = 1;
-                    btnMode.Content = "🎵 当前模式: 交响乐 (1秒抗丢包)";
+                    btnMode.Content = "🎵 当前引擎: 交响乐模式 (1秒抗抖动缓冲)";
                     btnMode.Foreground = new SolidColorBrush(Color.FromRgb(0, 202, 114));
                 } else {
                     _mvpStreamMode = 0;
-                    btnMode.Content = "🎮 当前模式: 电竞 (20ms低延迟)";
+                    btnMode.Content = "🎮 当前引擎: 电竞模式 (20ms极低延迟)";
                     btnMode.Foreground = Brushes.White;
                 }
                 if (_mvpStreamer != null) _mvpStreamer.StreamMode = _mvpStreamMode;
                 if (_localSyncNode != null) _localSyncNode.TargetDelayMs = _mvpStreamMode == 1 ? 1000 : 20; // 🌟 同步扭曲本地时间轴！
             };
-            stack.Children.Add(btnMode);
+            mainStack.Children.Add(btnMode);
 
             var btnStart = new Button { 
-                Content = "🚀 锁定该通道并启动极速推流", 
+                Content = "🚀 锁定音频矩阵并启动串流", 
                 Height = 45, FontSize = 16, FontWeight = FontWeights.Bold,
                 Style = (Style)FindResource("PrimaryCyberButtonStyle")
             };
@@ -148,9 +178,9 @@ namespace SuperWorkspace
                     ShowCyberMessage("⚠️ 提示", "请先选择一个音频通道！");
                 }
             };
-            stack.Children.Add(btnStart);
+            mainStack.Children.Add(btnStart);
 
-            mvpWindow.Content = stack;
+            mvpWindow.Content = mainStack;
             mvpWindow.ShowDialog();
         }
 
@@ -283,6 +313,9 @@ namespace SuperWorkspace
                                 let decodedCounter = 0;
                                 let silentCounter = 0; // 🌟 连续静音帧计数器
                                 let lastScheduledTime = 0; // 🌟 防重叠排队锁
+                                
+                                // 🌟 防挂起探针：部分移动端浏览器会在静音时挂起 AudioContext，强制心跳唤醒！
+                                setInterval(() => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, 2000);
 
                                 function logDebug(msg) {
                                     debugOutput.style.display = 'block';

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "🚀 示例：系统进程猎手",
+    "author": "Commander Studio",
+    "version": "1.0.0",
+    "description": "这是官方提供的测试插件，用于在后台静默清理占用端口的流氓软件。",
+    "downloadUrl": "https://github.com/sq756/SuperWorkspace/releases/download/v1.0/ExamplePlugin.dll"
+  }
+]

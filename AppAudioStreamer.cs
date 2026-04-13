@@ -106,10 +106,12 @@ namespace SuperWorkspace
 
             // 2. 锻造神圣包头 (14 字节)
             _sequenceCounter++;
-            long currentTimestamp = _currentFrameTimestamp; // 🌟 核心：使用声卡抓取时的绝对源头时间，而非打包时间！
+            // 🌟 核心修复：强制使用与 WebSocket PTP 同步握手完全一致的时间基准 (Unix毫秒)！
+            // 彻底消灭因为 Ticks (100纳秒) 传入前端导致计算出“2000万年后播放”的荒谬 Bug！
+            long timestampToSend = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); 
             
             BinaryPrimitives.WriteUInt32BigEndian(new Span<byte>(_packetBuffer, 0, 4), _sequenceCounter);
-            BinaryPrimitives.WriteInt64BigEndian(new Span<byte>(_packetBuffer, 4, 8), currentTimestamp);
+            BinaryPrimitives.WriteInt64BigEndian(new Span<byte>(_packetBuffer, 4, 8), timestampToSend);
             BinaryPrimitives.WriteUInt16BigEndian(new Span<byte>(_packetBuffer, 12, 2), (ushort)compressedSize);
             _packetBuffer[14] = StreamMode; // 🌟 写入战术指令 QoS 标志位
 

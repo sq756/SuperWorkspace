@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -89,6 +89,15 @@ namespace SuperWorkspace
         public string LocalIp { get; set; } = "";   
     }
 
+    // 🌟 GitHub 在线插件映射实体
+    public class OnlinePluginInfo {
+        public string Name { get; set; } = "";
+        public string Author { get; set; } = "";
+        public string Version { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string DownloadUrl { get; set; } = "";
+    }
+
     public partial class MainWindow : Window
     {
         // 🌟 第二部分：把变量放在 MainWindow 里面（最上面）
@@ -98,6 +107,7 @@ namespace SuperWorkspace
         // 🌟 生态接口 API：暴露核心状态与执行权限给插件
         public AdbDevice? CurrentDevice => _selectedDevice;
         public string ExecuteAdb(string args) => RunAdbCommand(args);
+        public event Action<System.Drawing.Bitmap>? OnVideoFrameCaptured; // 🌟 暴露实时视频帧流给 AI/YOLO 插件
 
         // 🌟 托盘与后台常驻服务引擎
         private System.Windows.Forms.NotifyIcon? _notifyIcon;
@@ -285,56 +295,79 @@ namespace SuperWorkspace
             });
         }
 
-        private void SliderRemoteBrightness_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        // 🌟 核心升级：基于微秒级无锁防抖 (Debounce) 的流式追踪，彻底解决滑动卡顿！
+        private int _brightDebounce = 0;
+        private async void SliderRemoteBrightness_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_selectedDevice == null) return;
+            int val = (int)e.NewValue;
             
-            // 🌟 核心修复 1：使用 Background 优先级确保 WPF 滑块的值已经彻底完成物理更新
-            Dispatcher.InvokeAsync(() => {
-                int val = (int)SliderRemoteBrightness.Value;
-                Task.Run(() => {
-                    // 🌟 暴力穷举法：击穿所有安卓版本的碎片化限制！
-                    RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system screen_brightness_mode 0");
-                    RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system screen_brightness {val}");
-                    // 针对 Android 8~9 的内核指令 (0~255)
-                    RunAdbCommand($"-s {_selectedDevice.Id} shell cmd display set-brightness {val}");
-                    // 针对 Android 10+ 的新版内核指令 (0.0~1.0 浮点数，强制不变文化小数点)
-                    string floatVal = (val / 255.0f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-                    RunAdbCommand($"-s {_selectedDevice.Id} shell cmd display set-brightness {floatVal}");
-                });
-                AppendLog($"RemoteConsole: Set tablet brightness to {val}");
-            }, DispatcherPriority.Background);
+            int currentId = System.Threading.Interlocked.Increment(ref _brightDebounce);
+            await Task.Delay(150); // 拦截 150ms 内的疯狂触发
+            if (currentId != _brightDebounce) return; // 🌟 如果不是最后一次移动，直接抛弃，绝不拥塞 ADB！
+            
+            _ = Task.Run(() => {
+                // 🌟 暴力穷举法：击穿所有安卓版本的碎片化限制！
+                RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system screen_brightness_mode 0");
+                RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system screen_brightness {val}");
+                // 针对 Android 8~9 的内核指令 (0~255)
+                RunAdbCommand($"-s {_selectedDevice.Id} shell cmd display set-brightness {val}");
+                // 针对 Android 10+ 的新版内核指令 (0.0~1.0 浮点数，强制不变文化小数点)
+                string floatVal = (val / 255.0f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+                RunAdbCommand($"-s {_selectedDevice.Id} shell cmd display set-brightness {floatVal}");
+                Dispatcher.InvokeAsync(() => AppendLog($"RemoteConsole: Set tablet brightness to {val}"));
+            });
         }
 
-        private void SliderRemoteVolume_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private int _volDebounce = 0;
+        private async void SliderRemoteVolume_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (_selectedDevice == null) return;
-            Dispatcher.InvokeAsync(() => {
-                int val = (int)SliderRemoteVolume.Value;
-                Task.Run(() => {
+            int val = (int)e.NewValue;
+
+            int currentId = System.Threading.Interlocked.Increment(ref _volDebounce);
+            await Task.Delay(150); 
+            if (currentId != _volDebounce) return;
+            
+            _ = Task.Run(() => {
+                // 🌟 安卓底层音量矩阵：因为系统碎片化，必须在不同维度饱和式下达指令
+                if (val == 0) {
+                    RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 164"); // Mute
+                } else {
                     // 🌟 终极饱和式音量轰炸：击穿所有安卓定制系统的防御！
-                    // 1. 标准 API (带 UI 唤醒)
-                    RunAdbCommand($"-s {_selectedDevice.Id} shell media volume --show --stream 3 --set {val}");
-                    // 2. 备用 API (静默设置，防止 --show 引发崩溃)
+                    // 1. 标准 API (静默设置，无界面的深层注入)
                     RunAdbCommand($"-s {_selectedDevice.Id} shell media volume --stream 3 --set {val}");
                     // 3. Android 11+ 新版内核 API
                     RunAdbCommand($"-s {_selectedDevice.Id} shell cmd media_session volume --show --stream 3 --set {val}");
                     // 4. 针对 MIUI / OriginOS 等深度魔改系统：直接暴力篡改底层 Settings 数据库
                     RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system volume_music {val}");
                     RunAdbCommand($"-s {_selectedDevice.Id} shell settings put system volume_music_speaker {val}");
-
-                    // 5. 物理级兜底：如果是静音(0)或最大音量(15)，强行下发多次物理按键扫描码！
-                    if (val == 0) {
-                        RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 164"); // KEYCODE_VOLUME_MUTE
-                        RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 25");  // KEYCODE_VOLUME_DOWN
-                        RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 25");
-                    } else if (val >= 15) {
+                    if (val >= 15) {
                         RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 24");  // KEYCODE_VOLUME_UP
                         RunAdbCommand($"-s {_selectedDevice.Id} shell input keyevent 24");
                     }
-                });
-                AppendLog($"RemoteConsole: Set tablet media volume to {val}");
-            }, DispatcherPriority.Background);
+                }
+                Dispatcher.InvokeAsync(() => AppendLog($"RemoteConsole: Set tablet media volume to {val}"));
+            });
+        }
+
+        // 🌟 安卓底层音频路由引擎
+        private void ComboRemoteAudioRoute_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (_selectedDevice == null || ComboRemoteAudioRoute == null || !this.IsLoaded) return;
+            int index = ComboRemoteAudioRoute.SelectedIndex;
+            
+            _ = Task.Run(() => {
+                if (index == 1) {
+                    // 🌟 强行拉起 Android 11+ 系统原生的“媒体输出路由器 (Media Output Switcher)”
+                    // 由于不同安卓厂商魔改严重，这是目前最优雅且无需 Root 就能切换 扬声器/耳机/蓝牙 的方案
+                    RunAdbCommand($"-s {_selectedDevice.Id} shell am start -a android.media.action.MEDIA_OUTPUT");
+                } else if (index == 2) {
+                    // 🌟 强行拉起蓝牙设置，让用户强制断开或连接蓝牙耳机
+                    RunAdbCommand($"-s {_selectedDevice.Id} shell am start -a android.settings.BLUETOOTH_SETTINGS");
+                }
+                Dispatcher.Invoke(() => ComboRemoteAudioRoute.SelectedIndex = 0); // 弹起面板后恢复默认态
+            });
         }
 
         private void Btn_OpenBlackBox_Click(object sender, RoutedEventArgs e) { BlackBoxOverlay.Visibility = Visibility.Visible; }
@@ -1143,7 +1176,7 @@ namespace SuperWorkspace
             StatusText.Text = "状态: 正在配置超级视听采集参数...";
         }
 
-        public void LaunchCamera(int sourceIndex, int resIndex, bool enableMic, bool screenOff)
+        public void LaunchCamera()
         {
             CloseOverlay();
             StatusText.Text = "状态: 正在启动超级视听引擎...";
@@ -1164,28 +1197,10 @@ namespace SuperWorkspace
 
                 List<string> argsList = new List<string> { 
                     "-s", _selectedDevice.Id,
-                    "--window-title=SuperWorkspaceCamera", // 🌟 修复 1：去掉空格，防止命令解析断层
-                    "--video-codec=h264" // 🌟 核心补丁：强制使用 H.264 编码，防止荣耀等机型底层崩溃！
+                    "--window-title=SuperWorkspaceCamera",
+                    "-b 20M", "--max-fps 60", "--no-audio", // 🌟 降维镜像打击：回归高画质、高帧率，彻底抛弃底层权限暗礁
+                    "--window-x=-10000", "--window-y=-10000", "--window-borderless"
                 };
-
-                // 🌟 视频源配置 (直接抽底层摄像头流)
-                if (sourceIndex == 0) {
-                    argsList.Add("--video-source=camera --camera-facing=front --camera-fps=30"); // 增加强制帧率防崩溃
-                } else if (sourceIndex == 1) {
-                    argsList.Add("--video-source=camera --camera-facing=back --camera-fps=30");
-                } else if (sourceIndex == 2) {
-                    argsList.Add("--no-video"); // 纯麦克风模式
-                }
-
-                // 🌟 分辨率限制
-                if (resIndex == 0) argsList.Add("-m 720");     
-                else if (resIndex == 1) argsList.Add("-m 1080"); 
-
-                // 🌟 麦克风配置
-                if (enableMic) argsList.Add("--audio-source=mic");
-                else argsList.Add("--no-audio");
-
-                if (screenOff) argsList.Add("-S");
 
                 string finalArguments = string.Join(" ", argsList);
                 ProcessStartInfo psi = new ProcessStartInfo
@@ -1203,19 +1218,36 @@ namespace SuperWorkspace
             try { JobManager.AddProcess(process.Handle); } catch { } // 🌟 绑定作业对象
 
                 // 🌟 启动后台抓取并重定向到系统虚拟相机
-                if (sourceIndex != 2) // 如果不是纯麦克风模式
-                {
-                    StartVirtualCameraLoop();
-                }
+                StartVirtualCameraLoop();
 
-                // 🌟 新增：异步监控引擎是否瞬间暴毙，并抓取尸检报告
+                // 🌟 核心防御升级：实时流式监控手机端的伏击（防弹衣机制）
+                var errorLog = new System.Text.StringBuilder();
+                process.ErrorDataReceived += (s, ev) => {
+                    if (!string.IsNullOrEmpty(ev.Data)) {
+                        errorLog.AppendLine(ev.Data);
+                        // 🌟 精准捕获断流异常，优雅阻断！
+                        if (ev.Data.Contains("Camera disconnected") || ev.Data.Contains("Camera capture failed")) {
+                            Dispatcher.InvokeAsync(() => {
+                                StopVirtualCameraLoop();
+                                try { if (!process.HasExited) process.Kill(); } catch { }
+                                ShowCyberMessage("⚠️ 摄像头信号丢失 (安全拦截)", "手机端拒绝了摄像头调用或信号被强行掐断！\n\n排查建议：\n1. 尝试在面板中关闭【采集手机麦克风】（有时是麦克风权限受限导致整体崩溃）。\n2. 尝试切换为【手机后置主摄】或其他分辨率。\n3. 确保手机屏幕常亮且未锁屏。\n\n引擎已为您安全阻断，主程序依然稳如磐石。");
+                                StatusText.Text = "状态: 摄像头信号丢失，已安全拦截";
+                            });
+                        }
+                    }
+                };
+                process.BeginErrorReadLine();
+
                 _ = Task.Run(() => {
-                    string error = process.StandardError.ReadToEnd();
                     process.WaitForExit();
                     StopVirtualCameraLoop(); // 引擎退出时停止抓取
-                    if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(error)) {
+                    
+                    string finalError = errorLog.ToString();
+                    if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(finalError) && 
+                        !finalError.Contains("Camera disconnected") && !finalError.Contains("Camera capture failed")) 
+                    {
                         Dispatcher.Invoke(() => {
-                            ShowCyberMessage("❌ 排雷诊断书", $"视听引擎被手机系统拦截！错误日志：\n\n{error}");
+                            ShowCyberMessage("❌ 排雷诊断书", $"视听引擎被手机系统拦截！错误日志：\n\n{finalError}");
                             StatusText.Text = "状态: 引擎意外崩溃，请查看弹窗日志";
                         });
                     }
@@ -2001,6 +2033,7 @@ namespace SuperWorkspace
         {
             PluginMarketOverlay.Visibility = Visibility.Visible;
             LoadLocalPluginsUI();
+            _ = LoadOnlinePluginsAsync(); // 🌟 异步拉取 GitHub 生态
         }
         private void Btn_ClosePluginMarket_Click(object sender, RoutedEventArgs e) { PluginMarketOverlay.Visibility = Visibility.Collapsed; }
 
@@ -2039,6 +2072,86 @@ namespace SuperWorkspace
             }
         }
 
+        // 🌟 核心引擎：从 GitHub 实时拉取生态花名册
+        private async Task LoadOnlinePluginsAsync()
+        {
+            Dispatcher.Invoke(() => {
+                TxtOnlineLoading.Visibility = Visibility.Visible;
+                TxtOnlineLoading.Text = "⏳ 正在从 GitHub 同步插件生态册...";
+                while (OnlinePluginListContainer.Children.Count > 1) OnlinePluginListContainer.Children.RemoveAt(1); // 清理旧数据
+            });
+
+            try {
+                using var client = new System.Net.Http.HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(15);
+                
+                // 🌟 极客网络容灾：同时备好官方源与国内公益加速节点！彻底击穿国内 raw 域名屏蔽。
+                string officialUrl = "https://raw.githubusercontent.com/sq756/SuperWorkspace/main/plugins.json";
+                string mirrorUrl = "https://ghproxy.net/" + officialUrl; 
+                
+                var response = await client.GetAsync(officialUrl);
+                if (!response.IsSuccessStatusCode) response = await client.GetAsync(mirrorUrl); // 官方连不上，光速无缝切镜像源！
+
+                // 🌟 核心排雷：精准捕获 404 错误，给出“说人话”的提示
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound) {
+                    Dispatcher.Invoke(() => { TxtOnlineLoading.Visibility = Visibility.Visible; TxtOnlineLoading.Text = "⚠️ 仓库中找不到 plugins.json。\n请确保您已经把该文件 Commit 并 Push 到了 GitHub 的 main 分支下！"; });
+                    return;
+                }
+                response.EnsureSuccessStatusCode(); // 如果是其他错误，直接抛出异常
+                string json = await response.Content.ReadAsStringAsync();
+                var plugins = JsonSerializer.Deserialize<List<OnlinePluginInfo>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                Dispatcher.Invoke(() => {
+                    TxtOnlineLoading.Visibility = Visibility.Collapsed;
+                    if (plugins == null || plugins.Count == 0) {
+                        TxtOnlineLoading.Visibility = Visibility.Visible; TxtOnlineLoading.Text = "当前仓库还没有审核通过的插件。"; return;
+                    }
+
+                    foreach (var p in plugins) {
+                        var border = new System.Windows.Controls.Border { Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40,40,45)), CornerRadius = new CornerRadius(6), Padding = new Thickness(10), Margin = new Thickness(0,0,0,10) };
+                        var sp = new System.Windows.Controls.StackPanel();
+                        sp.Children.Add(new System.Windows.Controls.TextBlock { Text = $"{p.Name} (v{p.Version})", Foreground = System.Windows.Media.Brushes.White, FontWeight = FontWeights.Bold });
+                        sp.Children.Add(new System.Windows.Controls.TextBlock { Text = $"作者: {p.Author}", Foreground = System.Windows.Media.Brushes.Gray, FontSize = 11, Margin = new Thickness(0, 2, 0, 5) });
+                        sp.Children.Add(new System.Windows.Controls.TextBlock { Text = p.Description, Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114)), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,10) });
+                        
+                        var btnDownload = new System.Windows.Controls.Button { Content = "⬇️ 一键安装", Height = 26, FontSize = 11, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Padding = new Thickness(10,0,10,0), Style = (Style)FindResource("CyberActionButtonStyle") };
+                        btnDownload.Click += async (s, ev) => await DownloadPluginAsync(p.DownloadUrl, p.Name, btnDownload);
+                        
+                        sp.Children.Add(btnDownload); border.Child = sp; OnlinePluginListContainer.Children.Add(border);
+                    }
+                });
+            } catch (Exception ex) {
+                Dispatcher.Invoke(() => { TxtOnlineLoading.Text = "❌ 连接 GitHub 失败，请检查网络设置或使用代理。\n" + ex.Message; });
+            }
+        }
+
+        // 🌟 核心引擎：一键自动安装第三方插件
+        private async Task DownloadPluginAsync(string downloadUrl, string pluginName, System.Windows.Controls.Button btn)
+        {
+            btn.IsEnabled = false; btn.Content = "⏳ 下载中..."; btn.Background = System.Windows.Media.Brushes.Gray;
+            try {
+                using var client = new System.Net.Http.HttpClient();
+                
+                // 🌟 镜像加速下载：如果下载的是 GitHub Release 的文件，同样走加速通道
+                string actualUrl = downloadUrl.Contains("github.com") ? "https://ghproxy.net/" + downloadUrl : downloadUrl;
+                byte[] data = await client.GetByteArrayAsync(actualUrl);
+                
+                string pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? "", "Plugins");
+                if (!Directory.Exists(pluginDir)) Directory.CreateDirectory(pluginDir);
+                
+                string fileName = Path.GetFileName(new Uri(downloadUrl).LocalPath);
+                if (string.IsNullOrEmpty(fileName) || !fileName.EndsWith(".dll")) fileName = $"{pluginName}.dll";
+                
+                await File.WriteAllBytesAsync(Path.Combine(pluginDir, fileName), data);
+                
+                btn.Content = "✅ 已安装 (需重启)"; btn.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+                ShowCyberMessage("🎉 插件部署成功", $"插件 [{pluginName}] 已下载至本地 Plugins 文件夹！\n\n为了保障运行环境安全，生态插件不会热重载。请彻底退出并重新启动 SuperWorkspace 以使插件生效！");
+            } catch (Exception ex) {
+                btn.IsEnabled = true; btn.Content = "❌ 下载失败 (重试)"; btn.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(216, 59, 1));
+                ShowCyberMessage("❌ 下载异常", $"插件下载失败:\n{ex.Message}\n请检查网络是否能够访问 GitHub 资源。");
+            }
+        }
+
         // 🌟 用户手动切换显卡调度策略
         private void ComboGpuPreference_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
@@ -2053,6 +2166,206 @@ namespace SuperWorkspace
                     if (!string.IsNullOrEmpty(mainExe)) key.SetValue(mainExe, $"GpuPreference={VirtualDisplayManager.GlobalGpuPreference};");
                 }
             } catch { }
+        }
+
+        // ==========================================
+        // 🌟 Android 11+ 免 USB 无线配对引擎 (Zero-Cable Dual Mode)
+        // ==========================================
+        private void Btn_ZeroCablePairing_Click(object sender, RoutedEventArgs e)
+        {
+            // 🌟 动态构建极客风的双模态无线配对面板
+            var pairWindow = new Window {
+                Title = "Android 11+ 隔空双擎握手",
+                Width = 480, Height = 560,
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(26, 26, 36)),
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var mainStack = new System.Windows.Controls.StackPanel { Margin = new Thickness(25) };
+            mainStack.Children.Add(new System.Windows.Controls.TextBlock { Text = "📶 隔空握手 (Zero-Cable)", Foreground = System.Windows.Media.Brushes.White, FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,15) });
+
+            // 🌟 双模态顶部切换器 (Segment Control)
+            var segmentGrid = new System.Windows.Controls.Grid { Margin = new Thickness(0,0,0,20) };
+            segmentGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
+            segmentGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
+
+            var btnModeCode = new System.Windows.Controls.Button { Content = "🔑 极客配对码 (当前稳定)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand };
+            var btnModeQr = new System.Windows.Controls.Button { Content = "📷 扫码直连 (研发中)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.Gray, BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand };
+            
+            System.Windows.Controls.Grid.SetColumn(btnModeCode, 0);
+            System.Windows.Controls.Grid.SetColumn(btnModeQr, 1);
+            segmentGrid.Children.Add(btnModeCode);
+            segmentGrid.Children.Add(btnModeQr);
+            mainStack.Children.Add(segmentGrid);
+
+            // =====================================
+            // 模式 1：密码配对层 (原有的稳定逻辑)
+            // =====================================
+            var codePanel = new System.Windows.Controls.StackPanel();
+            codePanel.Children.Add(new System.Windows.Controls.TextBlock { Text = "请在手机「开发者选项 -> 无线调试」中，点击「使用配对码配对」。", Foreground = System.Windows.Media.Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 15) });
+
+            // 🌟 局域网 mDNS 自动雷达探测 UI
+            var ipPortLabelPanel = new System.Windows.Controls.Grid { Margin = new Thickness(0, 0, 0, 5) };
+            ipPortLabelPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            ipPortLabelPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
+            
+            var lblIpPort = new System.Windows.Controls.TextBlock { Text = "1. 配对 IP 与端口", Foreground = System.Windows.Media.Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+            var btnAutoDetect = new System.Windows.Controls.Button { Content = "🔍 局域网自动探测", Background = System.Windows.Media.Brushes.Transparent, Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)), BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand, FontSize = 12 };
+            
+            System.Windows.Controls.Grid.SetColumn(lblIpPort, 0);
+            System.Windows.Controls.Grid.SetColumn(btnAutoDetect, 1);
+            ipPortLabelPanel.Children.Add(lblIpPort);
+            ipPortLabelPanel.Children.Add(btnAutoDetect);
+            codePanel.Children.Add(ipPortLabelPanel);
+
+            var txtIpPort = new System.Windows.Controls.TextBox { Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.White, FontSize = 16, Margin = new Thickness(0, 0, 0, 15), Padding = new Thickness(5) };
+            codePanel.Children.Add(txtIpPort);
+            
+            var txtCodeLabel = new System.Windows.Controls.TextBlock { Text = "2. 6位 WLAN 配对码", Foreground = System.Windows.Media.Brushes.White };
+            codePanel.Children.Add(txtCodeLabel);
+            var txtCode = new System.Windows.Controls.TextBox { Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.White, FontSize = 16, Margin = new Thickness(0, 5, 0, 20), MaxLength = 6, Padding = new Thickness(5) };
+            codePanel.Children.Add(txtCode);
+
+            var btnAction = new System.Windows.Controls.Button { Content = "🚀 第一步：发起底层授权握手", Height = 45, FontSize = 14, FontWeight = FontWeights.Bold, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
+            var txtLog = new System.Windows.Controls.TextBlock { Foreground = System.Windows.Media.Brushes.Gray, Margin = new Thickness(0, 15, 0, 0), TextWrapping = TextWrapping.Wrap };
+            
+            bool isPairingPhase = true;
+            
+            // 🌟 雷达探测逻辑
+            btnAutoDetect.Click += async (s, ev) => {
+                btnAutoDetect.IsEnabled = false; btnAutoDetect.Content = "⏳ 探测中...";
+                txtLog.Text = "📡 正在通过 mDNS 组播扫描局域网内的设备...";
+                string detectedIpPort = "";
+                await Task.Run(() => {
+                    string res = RunAdbCommand("mdns services");
+                    foreach (var line in res.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)) {
+                        if (line.Contains("_adb-tls-pairing._tcp")) {
+                            var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length >= 3) detectedIpPort = parts[parts.Length - 1];
+                        }
+                    }
+                });
+                Dispatcher.Invoke(() => {
+                    if (!string.IsNullOrEmpty(detectedIpPort)) {
+                        txtIpPort.Text = detectedIpPort;
+                        txtLog.Text = $"✅ 探测成功！已自动填入配对地址 {detectedIpPort}。\n👉 请继续输入 6 位配对码。";
+                        txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+                        txtCode.Focus();
+                    } else {
+                        txtLog.Text = "❌ 未探测到设备。\n请确保手机已进入「使用配对码配对」界面，且与电脑连接同一 Wi-Fi。";
+                        txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(216, 59, 1));
+                    }
+                    btnAutoDetect.Content = "🔍 局域网自动探测"; btnAutoDetect.IsEnabled = true;
+                });
+            };
+
+            btnAction.Click += async (s, ev) => {
+                btnAction.IsEnabled = false;
+                string ipPort = txtIpPort.Text.Trim();
+                if (isPairingPhase) {
+                    string code = txtCode.Text.Trim();
+                    txtLog.Text = "⏳ 正在生成 RSA 密钥并进行无线握手...";
+                    await Task.Run(() => {
+                        string res = RunAdbCommand($"pair {ipPort} {code}");
+                        Dispatcher.Invoke(() => {
+                            if (res.Contains("Successfully paired") || res.Contains("Already paired")) {
+                                txtLog.Text = $"✅ 握手成功！\n{res}\n\n👉 关键：现在请看手机「无线调试」主界面，输入那里的【IP地址和端口】进行最终连接。";
+                                txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+                                isPairingPhase = false;
+                                txtCodeLabel.Visibility = Visibility.Collapsed;
+                                txtCode.Visibility = Visibility.Collapsed;
+                                btnAction.Content = "🔗 第二步：建立最终控制链路";
+                                btnAction.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+                                string ip = ipPort.Split(':')[0];
+                                txtIpPort.Text = $"{ip}:"; 
+                                
+                                // 🌟 魔法再续：自动抓取第二步的最终连接端口！
+                                _ = Task.Run(() => {
+                                    string connectIpPort = "";
+                                    string res2 = RunAdbCommand("mdns services");
+                                    foreach (var line in res2.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)) {
+                                        if (line.Contains("_adb-tls-connect._tcp") && line.Contains(ip)) {
+                                            var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                                            if (parts.Length >= 3) connectIpPort = parts[parts.Length - 1];
+                                        }
+                                    }
+                                    Dispatcher.Invoke(() => {
+                                        if (!string.IsNullOrEmpty(connectIpPort)) {
+                                            txtIpPort.Text = connectIpPort;
+                                            txtLog.Text += $"\n\n✨ 魔法探测：已自动抓取最终连接端口 {connectIpPort}，请直接点击第二步！";
+                                        } else {
+                                            txtIpPort.Focus();
+                                            txtIpPort.CaretIndex = txtIpPort.Text.Length;
+                                        }
+                                    });
+                                });
+                            } else {
+                                txtLog.Text = $"❌ 握手失败:\n{res}";
+                                txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(216, 59, 1));
+                            }
+                        });
+                    });
+                } else {
+                    txtLog.Text = "⏳ 正在打通最终控制链路...";
+                    await Task.Run(() => {
+                        string res = RunAdbCommand($"connect {ipPort}");
+                        Dispatcher.Invoke(() => {
+                            if (res.Contains("connected to") || res.Contains("already connected")) {
+                                txtLog.Text = "🎉 连接成功！您可以关闭此窗口，魔法即将开始。";
+                                txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+                                _ = RefreshDeviceList(); 
+                            } else {
+                                txtLog.Text = $"❌ 连接失败:\n{res}";
+                                txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(216, 59, 1));
+                            }
+                        });
+                    });
+                }
+                btnAction.IsEnabled = true;
+            };
+            codePanel.Children.Add(btnAction);
+            codePanel.Children.Add(txtLog);
+
+            // =====================================
+            // 模式 2：扫码配对层 (规划中的概念 UI)
+            // =====================================
+            var qrPanel = new System.Windows.Controls.StackPanel { Visibility = Visibility.Collapsed };
+            qrPanel.Children.Add(new System.Windows.Controls.TextBlock { Text = "请在手机「开发者选项 -> 无线调试」中，点击「使用二维码配对」。", Foreground = System.Windows.Media.Brushes.Gray, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 15) });
+
+            var qrBorder = new System.Windows.Controls.Border { Background = System.Windows.Media.Brushes.White, Width = 180, Height = 180, Margin = new Thickness(0, 10, 0, 25), CornerRadius = new CornerRadius(8) };
+            var qrPlaceholder = new System.Windows.Controls.TextBlock { Text = "QR Engine\n尚未载入", Foreground = System.Windows.Media.Brushes.Black, FontSize = 18, FontWeight = FontWeights.Bold, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, VerticalAlignment = System.Windows.VerticalAlignment.Center, TextAlignment = System.Windows.TextAlignment.Center };
+            qrBorder.Child = qrPlaceholder;
+            qrPanel.Children.Add(qrBorder);
+
+            qrPanel.Children.Add(new System.Windows.Controls.TextBlock { Text = "💡 架构师注：安卓原生扫码配对需要 PC 端在局域网内建立 mDNS 广播服务与 TLS 握手证书服务器。\n\n您的极客思维非常超前！我们已在 UI 层预留了这块风水宝地，未来当我们封装好 C# 的 mDNS 通信引擎后，扫码秒连将成为现实！", Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)), FontSize = 12, TextWrapping = TextWrapping.Wrap, LineHeight = 18 });
+
+            // =====================================
+            // 动态切换交互逻辑
+            // =====================================
+            btnModeCode.Click += (s, ev) => {
+                btnModeCode.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229));
+                btnModeCode.Foreground = System.Windows.Media.Brushes.White;
+                btnModeQr.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45));
+                btnModeQr.Foreground = System.Windows.Media.Brushes.Gray;
+                codePanel.Visibility = Visibility.Visible;
+                qrPanel.Visibility = Visibility.Collapsed;
+            };
+
+            btnModeQr.Click += (s, ev) => {
+                btnModeQr.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229));
+                btnModeQr.Foreground = System.Windows.Media.Brushes.White;
+                btnModeCode.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45));
+                btnModeCode.Foreground = System.Windows.Media.Brushes.Gray;
+                qrPanel.Visibility = Visibility.Visible;
+                codePanel.Visibility = Visibility.Collapsed;
+            };
+
+            mainStack.Children.Add(codePanel);
+            mainStack.Children.Add(qrPanel);
+            pairWindow.Content = mainStack;
+            pairWindow.ShowDialog();
         }
 
     }
