@@ -21,3 +21,6 @@ VBCABLE_Driver_Pack45/
 VirtualDisplayDriver/
 WebServer/
 scrcpy-win64-v2.4/
+
+# 🛡️ 忽略本地的第三方插件生态，防止仓库臃肿
+Plugins/
