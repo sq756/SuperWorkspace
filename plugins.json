@@ -1,9 +1,23 @@
 [
   {
-    "name": "🚀 示例：系统进程猎手",
-    "author": "Commander Studio",
+    "name": "🌟 示例：功能验证插件",
+    "author": "sq756",
     "version": "1.0.0",
-    "description": "这是官方提供的测试插件，用于在后台静默清理占用端口的流氓软件。",
-    "downloadUrl": "https://github.com/sq756/SuperWorkspace/releases/download/v1.0/ExamplePlugin.dll"
+    "description": "这是用来验证插件生态和基础接口连通性的第一个官方测试插件。",
+    "downloadUrl": "https://github.com/sq756/SuperWorkspace/releases/download/v1.0.0-plugins/MyFirstPlugin.dll"
+  },
+  {
+    "name": " 魂斗罗 (Contra)",
+    "author": "sq756",
+    "version": "1.0.0",
+    "description": "经典 FC 游戏魂斗罗插件版，带你重温童年回忆！",
+    "downloadUrl": "https://github.com/sq756/SuperWorkspace/releases/download/v1.0.0-plugins/ContraPlugin.dll"
+  },
+  {
+    "name": "🧩 2048 小游戏",
+    "author": "sq756",
+    "version": "1.0.0",
+    "description": "经典益智消除小游戏 2048，工作摸鱼、活动大脑必备神器。",
+    "downloadUrl": "https://github.com/sq756/SuperWorkspace/releases/download/v1.0.0-plugins/2048.dll"
   }
 ]
