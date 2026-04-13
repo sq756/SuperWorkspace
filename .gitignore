@@ -16,3 +16,8 @@ deck_config.json
 Thumbs.db
 Desktop.ini
 SetupBuild/
+# 🛡️ 忽略第三方闭源驱动与二进制程序，防止侵权与仓库臃肿
+VBCABLE_Driver_Pack45/
+VirtualDisplayDriver/
+WebServer/
+scrcpy-win64-v2.4/
