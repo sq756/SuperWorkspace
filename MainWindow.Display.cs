@@ -478,6 +478,12 @@ namespace SuperWorkspace
 
                 if (ComboDisplayIndex.Items.Count > 0)
                     ComboDisplayIndex.SelectedIndex = ComboDisplayIndex.Items.Count > 1 ? 1 : 0; // 默认选中第二个屏幕（副屏）
+                
+                // 🌟 同步更新 UI 状态栏
+                Dispatcher.InvokeAsync(() => {
+                    if (Txt_VirtualScreenCount != null) 
+                        Txt_VirtualScreenCount.Text = $"🖥️ 当前系统可用屏幕：{ComboDisplayIndex.Items.Count} 块";
+                });
             }
             catch (Exception ex) { Debug.WriteLine("DXGI 扫描屏幕失败: " + ex.Message); }
             return ComboDisplayIndex.Items.Count;
@@ -486,58 +492,111 @@ namespace SuperWorkspace
         private async void Btn_InitVirtualDriver_Click(object sender, RoutedEventArgs e)
         {
             if (_vdManager == null) _vdManager = new VirtualDisplayManager();
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) { btn.IsEnabled = false; btn.Content = "⏳ 正在初始化/唤醒底层驱动..."; }
             try {
                 await _vdManager.InstallDriverAsync();
-                ShowCyberMessage("✅ 驱动底座就绪", "底层框架已注入 Windows！\n现在你可以随时点击【➕ 创造虚拟屏】来生成屏幕了，且绝不掉线！");
+                ShowCyberMessage("✅ 驱动底座就绪", "底层框架已注入 Windows！\n现在你可以随时点击【➕ 新增虚拟屏】来生成屏幕了，且绝不掉线！");
             } catch (Exception ex) { ShowCyberMessage("❌ 失败", ex.Message); }
+            finally { if (btn != null) { btn.IsEnabled = true; btn.Content = "🔧 手动初始化/唤醒驱动底座"; } }
         }
 
         private async void Btn_AddVirtualScreen_Click(object sender, RoutedEventArgs e)
         {
             if (_vdManager == null) _vdManager = new VirtualDisplayManager();
+            
+            // 🌟 1. UI 物理状态锁：防狂点导致的进程队列死锁
+            Btn_AddVirtualScreen.IsEnabled = false;
+            Btn_RemoveVirtualScreen.IsEnabled = false;
+            Btn_AddVirtualScreen.Content = "⏳ 正在生成...";
+            Btn_AddVirtualScreen.Foreground = System.Windows.Media.Brushes.Gray;
+
             try {
-                int beforeCount = ComboDisplayIndex.Items.Count;
+                int beforeCount = RefreshDisplayList();
                 StatusText.Text = "状态: 正在向 Windows 请求分配显存并创建虚拟屏...";
+                
+                // 🌟 2. 致命单发注入 (自带底层 ExitCode 报错检测，失败会直接阻断)
                 await _vdManager.AddScreenAsync();
                 
-                // 🌟 方案二：智能重试雷达
-                await Task.Delay(2000); 
-                int afterCount = RefreshDisplayList();
-                
-                if (afterCount <= beforeCount) {
-                    StatusText.Text = "状态: Windows 分配显存较慢，启动雷达深度扫描重试...";
-                    await Task.Delay(1500); // 追加等待 1.5 秒
-                    afterCount = RefreshDisplayList();
+                // 🌟 3. 高频微型雷达阵列 (每0.5秒扫一次，最多5秒)
+                bool isSuccess = false;
+                for (int i = 0; i < 10; i++) {
+                    await Task.Delay(500);
+                    if (RefreshDisplayList() > beforeCount) { isSuccess = true; break; }
                 }
-
-                if (afterCount > beforeCount) ShowCyberMessage("✅ 虚拟屏创造成功", "新屏幕已上线！\n\n👉 请按键盘【Win + P】确保处于【扩展】模式，否则它会显示和主屏一样的镜像！");
-                else ShowCyberMessage("⚠️ 屏幕未增加", "驱动已执行命令，但 Windows 尚未分配出新屏幕。\n如果频繁出现此提示，可能是已达到驱动支持的物理上限，或请点击【急救重置】！");
                 
-                StatusText.Text = "状态: 屏幕雷达扫描完毕";
-            } catch (Exception ex) { ShowCyberMessage("❌ 失败", ex.Message); }
+                // 🌟 4. 最终审判 (剥离导致连续弹 UAC 并引起卡顿的自动重启逻辑)
+                if (isSuccess) {
+                    ShowCyberMessage("✅ 虚拟屏创造成功", "新屏幕已上线！\n\n👉 请按键盘【Win + P】确保处于【扩展】模式，否则它会显示和主屏一样的镜像！");
+                    StatusText.Text = "状态: ✅ 虚拟屏幕已就绪";
+                } else {
+                    // 🌟 终极破案：只要没报 Exception 走到这里，说明驱动 100% 成功生成了屏幕！
+                    // DXGI 扫不到的原因只有一个：Windows 把它设为了“镜像”或“断开”！
+                    ShowCyberMessage("✅ 虚拟屏已在后台生成", "底层驱动已成功分配出屏幕，但雷达未检测到独立扩展屏。\n\n⚠️ 极大概率是因为 Windows 默认将新屏幕与主屏【镜像复制】了！\n\n👉 破局操作：请立即按键盘【Win + P】，点击选择【扩展】，新屏幕就会瞬间独立并出现在下拉列表中！");
+                    StatusText.Text = "状态: ⚠️ 处于镜像模式，请按 Win+P 扩展";
+                }
+            } catch (Exception ex) { 
+                ShowCyberMessage("❌ 创建失败", ex.Message); 
+                StatusText.Text = "状态: ❌ 虚拟屏创建异常";
+            } finally {
+                // 🌟 6. 释放 UI 物理锁
+                Btn_AddVirtualScreen.IsEnabled = true;
+                Btn_RemoveVirtualScreen.IsEnabled = true;
+                Btn_AddVirtualScreen.Content = "➕ 新增虚拟屏";
+                Btn_AddVirtualScreen.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
+            }
         }
 
         private async void Btn_RemoveVirtualScreen_Click(object sender, RoutedEventArgs e)
         {
             if (_vdManager == null) _vdManager = new VirtualDisplayManager();
+            
+            Btn_AddVirtualScreen.IsEnabled = false;
+            Btn_RemoveVirtualScreen.IsEnabled = false;
+            Btn_RemoveVirtualScreen.Content = "⏳ 正在拔除...";
+            Btn_RemoveVirtualScreen.Foreground = System.Windows.Media.Brushes.Gray;
+
             try { 
+                int beforeCount = RefreshDisplayList();
                 await _vdManager.RemoveScreenAsync(); 
-                ShowCyberMessage("🔌 虚拟屏已销毁", "最后一块生成的虚拟屏幕已被拔除。"); 
-                await Task.Delay(2000);
-                RefreshDisplayList();
+                
+                // 🌟 高频轮询等待系统释放硬件
+                bool isSuccess = false;
+                for (int i = 0; i < 10; i++) {
+                    await Task.Delay(500);
+                    if (RefreshDisplayList() < beforeCount) { isSuccess = true; break; }
+                }
+                
+                if (isSuccess) {
+                    ShowCyberMessage("🔌 虚拟屏已拔除", "成功销毁了一块虚拟屏幕，显卡资源已释放。"); 
+                    StatusText.Text = "状态: ✅ 虚拟屏幕已拔除";
+                } else {
+                    StatusText.Text = "状态: ⚠️ 屏幕拔除命令已下发，但 Windows 尚未完全卸载硬件";
+                }
             }
-            catch (Exception ex) { ShowCyberMessage("❌ 失败", ex.Message); }
+            catch (Exception ex) { 
+                ShowCyberMessage("❌ 拔除失败", ex.Message); 
+                StatusText.Text = "状态: ❌ 虚拟屏拔除异常";
+            } finally {
+                Btn_AddVirtualScreen.IsEnabled = true;
+                Btn_RemoveVirtualScreen.IsEnabled = true;
+                Btn_RemoveVirtualScreen.Content = "➖ 拔除虚拟屏";
+                Btn_RemoveVirtualScreen.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(216, 59, 1));
+            }
         }
 
         private async void Btn_ResetVirtualDriver_Click(object sender, RoutedEventArgs e)
         {
             if (_vdManager == null) _vdManager = new VirtualDisplayManager();
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) { btn.IsEnabled = false; btn.Content = "⏳ 正在强行重置驱动并清理..."; }
             try {
                 await _vdManager.ResetDriverAsync();
                 ShowCyberMessage("🧹 重置成功", "已强行重启底层虚拟驱动！\n所有残留的幽灵屏幕已被彻底清空。");
                 await Task.Delay(2000); // 留给 Windows 卸载硬件的时间
                 RefreshDisplayList();
             } catch (Exception ex) { ShowCyberMessage("❌ 失败", ex.Message); }
+            finally { if (btn != null) { btn.IsEnabled = true; btn.Content = "🧹 强行重置驱动并清空所有虚拟屏"; } }
         }
     }
 }

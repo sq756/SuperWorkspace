@@ -225,9 +225,81 @@ namespace SuperWorkspace
         [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hWnd);
 
+        // ==========================================
+        // 🌟 状态持久化与历史设备连接引擎
+        // ==========================================
+        private void LoadUIStates()
+        {
+            try {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\SuperWorkspace\UI");
+                if (key != null) {
+                    Toggle_Connection.IsChecked = (int)(key.GetValue("Toggle_Connection", 0) ?? 0) == 1;
+                    Toggle_VideoStream.IsChecked = (int)(key.GetValue("Toggle_VideoStream", 0) ?? 0) == 1;
+                    Toggle_RemoteConsole.IsChecked = (int)(key.GetValue("Toggle_RemoteConsole", 0) ?? 0) == 1;
+                    Toggle_BlackBox.IsChecked = (int)(key.GetValue("Toggle_BlackBox", 0) ?? 0) == 1;
+                }
+            } catch { }
+        }
+
+        private void ToggleUIState_Click(object sender, RoutedEventArgs e)
+        {
+            try {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\SuperWorkspace\UI");
+                if (key != null) {
+                    key.SetValue("Toggle_Connection", Toggle_Connection.IsChecked == true ? 1 : 0);
+                    key.SetValue("Toggle_VideoStream", Toggle_VideoStream.IsChecked == true ? 1 : 0);
+                    key.SetValue("Toggle_RemoteConsole", Toggle_RemoteConsole.IsChecked == true ? 1 : 0);
+                    key.SetValue("Toggle_BlackBox", Toggle_BlackBox.IsChecked == true ? 1 : 0);
+                }
+            } catch { }
+        }
+
+        private HashSet<string> _savedWifiDevices = new HashSet<string>();
+
+        private async Task AutoConnectHistoricalDevicesAsync()
+        {
+            try {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\SuperWorkspace\Devices");
+                string history = key?.GetValue("WifiHistory", "")?.ToString() ?? "";
+                if (!string.IsNullOrWhiteSpace(history)) {
+                    Dispatcher.Invoke(() => AppendLog("System: 正在尝试自动连接历史 Wi-Fi 设备..."));
+                    string[] ips = history.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    var tasks = new List<Task>();
+                    foreach (var ip in ips) {
+                        if (!string.IsNullOrWhiteSpace(ip)) tasks.Add(Task.Run(() => RunAdbCommand($"connect {ip}")));
+                    }
+                    await Task.WhenAll(tasks);
+                    Dispatcher.Invoke(() => {
+                        AppendLog("System: 历史设备唤醒探测完毕");
+                        _ = RefreshDeviceList(); // 重新刷新列表拉入上线的设备
+                    });
+                }
+            } catch { }
+        }
+
+        private void SaveDeviceToHistory(string deviceId)
+        {
+            // 🌟 只有包含 . 的设备 ID 才被认为是 Wi-Fi 设备 (例如 192.168.1.5:5555)
+            if (string.IsNullOrWhiteSpace(deviceId) || !deviceId.Contains(".")) return;
+            if (_savedWifiDevices.Contains(deviceId)) return; // 🌟 内存级去重，防止高频读写注册表
+
+            try {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\SuperWorkspace\Devices");
+                string history = key?.GetValue("WifiHistory", "")?.ToString() ?? "";
+                var ips = new List<string>(history.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+                if (!ips.Contains(deviceId)) {
+                    ips.Add(deviceId);
+                    if (ips.Count > 10) ips.RemoveAt(0); // 维持最多 10 个历史记录
+                    key?.SetValue("WifiHistory", string.Join(",", ips));
+                }
+                _savedWifiDevices.Add(deviceId); // 记录到内存
+            } catch { }
+        }
+
         public MainWindow()
         {
             InitializeComponent();
+            LoadUIStates(); // 🌟 加载用户折叠面板状态
 
             // 🌟 唤醒托盘图标与开机自启引擎
             InitializeTrayEngine();
@@ -238,6 +310,7 @@ namespace SuperWorkspace
             monitorTimer.Tick += MonitorTimer_Tick; 
             // 🌟 软件启动时，自动扫描一次设备！
             _ = RefreshDeviceList();
+            _ = AutoConnectHistoricalDevicesAsync(); // 🌟 自动唤醒历史 Wi-Fi 设备
             AppendLog("System: SuperWorkspace 核心引擎初始化完成");
             
             // 🌟 挂载基于钩子的剪贴板哨兵（必须等窗口初始化完毕）
@@ -370,6 +443,39 @@ namespace SuperWorkspace
             });
         }
 
+        // 🌟 幽灵网页猎杀器：强杀安卓各大主流浏览器
+        private void Btn_CloseBrowserTabs_Click(object sender, RoutedEventArgs e)
+        {
+            if (_selectedDevice == null) { ShowCyberMessage("⚠️ 未选择设备", "请选择设备！"); return; }
+            
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn != null) { btn.IsEnabled = false; btn.Content = "⏳ 正在执行无差别猎杀..."; }
+
+            _ = Task.Run(() => {
+                string targetId = _selectedDevice.Id;
+                // 🌟 覆盖市面上绝大多数的安卓浏览器包名字典
+                string[] browserPackages = {
+                    "com.android.chrome",           // Chrome
+                    "com.microsoft.emmx",           // Edge
+                    "com.android.browser",          // AOSP 默认浏览器 (很多定制系统基于此)
+                    "com.mi.globalbrowser",         // 小米/红米 浏览器
+                    "com.huawei.browser",           // 华为/荣耀 浏览器
+                    "com.heytap.browser",           // OPPO/一加 浏览器
+                    "com.vivo.browser",             // vivo/iQOO 浏览器
+                    "com.sec.android.app.sbrowser", // 三星 浏览器
+                    "com.UCMobile", "com.tencent.mtt", "mark.via", "com.quark.browser" // 第三方热门
+                };
+
+                foreach (var pkg in browserPackages) RunAdbCommand($"-s {targetId} shell am force-stop {pkg}");
+
+                Dispatcher.InvokeAsync(() => {
+                    if (btn != null) { btn.IsEnabled = true; btn.Content = "🧹 一键猎杀所有残留浏览器进程"; }
+                    AppendLog("RemoteConsole: Force stopped all common Android browsers.");
+                    ShowCyberMessage("✅ 清理完毕", "已向移动端下达了全图鉴的强制终止指令！\n\n所有堆积的沉浸式副屏网页、Chrome 残留标签都已被物理级清空，内存已被释放。");
+                });
+            });
+        }
+
         private void Btn_OpenBlackBox_Click(object sender, RoutedEventArgs e) { BlackBoxOverlay.Visibility = Visibility.Visible; }
         private void Btn_CloseBlackBox_Click(object sender, RoutedEventArgs e) { BlackBoxOverlay.Visibility = Visibility.Collapsed; }
 
@@ -418,7 +524,7 @@ namespace SuperWorkspace
             // 自动提取软件自己的 EXE 图标展示在右下角
             try { 
                 string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
-                if (File.Exists(exePath)) _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath); 
+                if (File.Exists(exePath)) _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath) ?? System.Drawing.SystemIcons.Application; 
                 else _notifyIcon.Icon = System.Drawing.SystemIcons.Application;
             } catch { _notifyIcon.Icon = System.Drawing.SystemIcons.Application; }
 
@@ -435,6 +541,22 @@ namespace SuperWorkspace
                         if (LogicalTreeHelper.FindLogicalNode(menu, "TrayMenu_AutoStart") is System.Windows.Controls.MenuItem autoStartItem) {
                             autoStartItem.IsChecked = CheckAutoStart();
                         }
+                        
+                        
+                        // 🌟 动态更新状态展示板
+                        if (LogicalTreeHelper.FindLogicalNode(menu, "TrayMenu_Status") is System.Windows.Controls.MenuItem statusItem) {
+                            statusItem.Header = _selectedDevice != null ? $"📱 当前连接: {_selectedDevice.Model}" : "📱 当前连接: 未连接";
+                            statusItem.Foreground = _selectedDevice != null ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)) : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(136, 136, 136));
+                        }
+                        
+                        // 🌟 动态更新键鼠穿越开关状态 (感知底层 _edgeProcess 是否存活)
+                        if (LogicalTreeHelper.FindLogicalNode(menu, "TrayMenu_ZeroSync") is System.Windows.Controls.MenuItem syncItem) {
+                            bool isSyncActive = _edgeProcess != null && !_edgeProcess.HasExited;
+                            syncItem.Header = isSyncActive ? "🛑 关闭边缘键鼠穿越" : "🔮 开启边缘键鼠穿越 (Zero-Sync)";
+                            // 如果开启了，变成绿色高亮
+                            syncItem.Foreground = isSyncActive ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114)) : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(224, 224, 224));
+                        }
+
                         menu.IsOpen = true;
                         
                         // 🌟 极其重要的 Windows 底层黑魔法：强行激活当前窗口
@@ -456,6 +578,9 @@ namespace SuperWorkspace
         // 🌟 WPF 菜单关联事件
         private void TrayMenu_Show_Click(object sender, RoutedEventArgs e) => ShowWindow();
         
+        // 🌟 直接复用 Sync.cs 里的核心穿越魔法代码！
+        private void TrayMenu_ZeroSync_Click(object sender, RoutedEventArgs e) => Btn_StartEdgeCrossing_Click(null, e);
+
         private void TrayMenu_AutoStart_Click(object sender, RoutedEventArgs e) {
             if (sender is System.Windows.Controls.MenuItem mi) SetAutoStart(mi.IsChecked);
         }
@@ -739,6 +864,8 @@ namespace SuperWorkspace
                             Monitor_Protocol.Text = "Wi-Fi 6";
                             Indicator_Connection.Fill = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#00CA72"));
                         }
+                        
+                        SaveDeviceToHistory(_selectedDevice.Id); // 🌟 记录到历史长廊，下次开机自动秒连
                         break;
                     }
                 }
@@ -1937,6 +2064,14 @@ namespace SuperWorkspace
             var headerKernel = new System.Windows.Controls.TextBlock { Text = "🛠️ Windows 内核驱动真实生效状态", Foreground = System.Windows.Media.Brushes.White, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 15, 0, 15) };
             DependencyListContainer.Children.Add(headerKernel);
 
+            // 🌟 满足你的需求：增加对虚拟副屏驱动(IddCx)的内核级存活探测！
+            bool isIddCxInstalled = false;
+            try {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\usbmmidd");
+                if (key != null) isIddCxInstalled = true;
+            } catch { }
+            AddDependencyItem(DependencyListContainer, isIddCxInstalled ? "🟢" : "🔴", isIddCxInstalled ? "虚拟副屏底层服务 (usbmmidd) 已在系统内核中注册" : "虚拟副屏服务未注册！(请点击初始化按钮，若一直失败请检查 Win11 内核隔离)", "", !isIddCxInstalled);
+
             bool isVBCableInstalled = false;
             try {
                 using var enumerator = new MMDeviceEnumerator();
@@ -2041,6 +2176,77 @@ namespace SuperWorkspace
         {
             string pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? "", "Plugins");
             if (!Directory.Exists(pluginDir)) Directory.CreateDirectory(pluginDir);
+            
+            // 🌟 核心魔法：动态投射开发者文档，防误删、防漏打包，时刻保持最新版！
+            string mdPath = Path.Combine(pluginDir, "插件开发指南_PluginDevGuide.md");
+            if (!File.Exists(mdPath)) {
+                string mdContent = @"# 🧩 SuperWorkspace 插件开发指南
+
+欢迎来到赛博工作站的底层世界！
+本目录用于存放第三方编译好的 `.dll` 插件。主程序将在启动时自动通过反射加载它们。
+
+## 🤖 致 AI 编程助手 (AI Context)
+如果你是 AI 编程助手（如 Gemini, Cursor, Claude），请严格遵循以下规则为用户生成插件代码：
+
+### 1. 工程配置 (.csproj)
+必须新建一个 **.NET 8.0 WPF 类库** 项目，且**绝对不能**将主程序的 DLL 打包进插件内。
+```xml
+<Project Sdk=""Microsoft.NET.Sdk"">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>MSB3277</NoWarn> <!-- 强行屏蔽底层的运行库版本冲突警告 -->
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include=""SuperWorkspace"">
+      <HintPath>你的主程序 SuperWorkspace.dll 的绝对路径</HintPath>
+      <Private>False</Private> <!-- 致命防御：绝对不能打包！防止内存双胞胎崩溃 -->
+    </Reference>
+  </ItemGroup>
+</Project>
+```
+
+### 2. 接口契约 (ISuperPlugin)
+主程序暴露了 `ISuperPlugin` 接口，插件的入口类必须是 `public class` 并实现该接口。
+```csharp
+using System;
+using SuperWorkspace; // 引用主程序
+
+namespace MyCyberPlugin
+{
+    public class MyPluginCore : ISuperPlugin
+    {
+        public string Name => ""🌟 我的赛博插件"";
+        public string Description => ""这里是描述"";
+        public string Author => ""作者名"";
+        public string Version => ""1.0.0"";
+
+        private MainWindow _context;
+
+        public void Initialize(MainWindow context) { _context = context; } // 夺取主程序的灵魂句柄
+
+        public void Start()
+        {
+            // 插件启动逻辑。你可以直接调用主程序的赛博弹窗！
+            _context.Dispatcher.Invoke(() => {
+                _context.ShowCyberMessage(""🎉 注入成功"", ""插件已在主程序中运行！"");
+            });
+            
+            // 你也可以获取当前连接的设备并执行 ADB 宏：
+            // var dev = _context.CurrentDevice;
+            // _context.ExecuteAdb($""-s {dev.Id} shell input keyevent 26"");
+        }
+
+        public void Stop() { /* 插件卸载时的清理逻辑 */ }
+    }
+}
+```
+";
+                File.WriteAllText(mdPath, mdContent, System.Text.Encoding.UTF8);
+            }
+
             Process.Start(new ProcessStartInfo { FileName = pluginDir, UseShellExecute = true });
         }
 
@@ -2086,15 +2292,15 @@ namespace SuperWorkspace
                 client.Timeout = TimeSpan.FromSeconds(15);
                 
                 // 🌟 极客网络容灾：同时备好官方源与国内公益加速节点！彻底击穿国内 raw 域名屏蔽。
-                string officialUrl = "https://raw.githubusercontent.com/sq756/SuperWorkspace/main/plugins.json";
+                string officialUrl = "https://raw.githubusercontent.com/sq756/SuperWorkspace/master/plugins.json";
                 string mirrorUrl = "https://ghproxy.net/" + officialUrl; 
                 
                 var response = await client.GetAsync(officialUrl);
                 if (!response.IsSuccessStatusCode) response = await client.GetAsync(mirrorUrl); // 官方连不上，光速无缝切镜像源！
 
-                // 🌟 核心排雷：精准捕获 404 错误，给出“说人话”的提示
+                // 🌟 核心排雷：精准捕获 404 错误，给出面向普通用户的提示，隐藏极客术语
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound) {
-                    Dispatcher.Invoke(() => { TxtOnlineLoading.Visibility = Visibility.Visible; TxtOnlineLoading.Text = "⚠️ 仓库中找不到 plugins.json。\n请确保您已经把该文件 Commit 并 Push 到了 GitHub 的 main 分支下！"; });
+                    Dispatcher.Invoke(() => { TxtOnlineLoading.Visibility = Visibility.Visible; TxtOnlineLoading.Text = "⚠️ 暂未发现可用的在线生态，或者服务器正在维护，请稍后再来看看吧。"; });
                     return;
                 }
                 response.EnsureSuccessStatusCode(); // 如果是其他错误，直接抛出异常
@@ -2106,6 +2312,9 @@ namespace SuperWorkspace
                     if (plugins == null || plugins.Count == 0) {
                         TxtOnlineLoading.Visibility = Visibility.Visible; TxtOnlineLoading.Text = "当前仓库还没有审核通过的插件。"; return;
                     }
+                    
+                    // 🌟 获取本地插件目录，用于比对状态
+                    string pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? "", "Plugins");
 
                     foreach (var p in plugins) {
                         var border = new System.Windows.Controls.Border { Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40,40,45)), CornerRadius = new CornerRadius(6), Padding = new Thickness(10), Margin = new Thickness(0,0,0,10) };
@@ -2114,8 +2323,21 @@ namespace SuperWorkspace
                         sp.Children.Add(new System.Windows.Controls.TextBlock { Text = $"作者: {p.Author}", Foreground = System.Windows.Media.Brushes.Gray, FontSize = 11, Margin = new Thickness(0, 2, 0, 5) });
                         sp.Children.Add(new System.Windows.Controls.TextBlock { Text = p.Description, Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114)), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,0,0,10) });
                         
-                        var btnDownload = new System.Windows.Controls.Button { Content = "⬇️ 一键安装", Height = 26, FontSize = 11, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, Cursor = System.Windows.Input.Cursors.Hand, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Padding = new Thickness(10,0,10,0), Style = (Style)FindResource("CyberActionButtonStyle") };
-                        btnDownload.Click += async (s, ev) => await DownloadPluginAsync(p.DownloadUrl, p.Name, btnDownload);
+                        // 🌟 动态计算目标文件名，并探测本地是否已存在
+                        string fileName = Path.GetFileName(new Uri(p.DownloadUrl).LocalPath);
+                        if (string.IsNullOrEmpty(fileName) || !fileName.EndsWith(".dll")) fileName = $"{p.Name}.dll";
+                        bool isInstalled = File.Exists(Path.Combine(pluginDir, fileName));
+
+                        var btnDownload = new System.Windows.Controls.Button { 
+                            Content = isInstalled ? "✅ 已安装" : "⬇️ 一键安装", 
+                            Height = 26, FontSize = 11, 
+                            Background = new System.Windows.Media.SolidColorBrush(isInstalled ? System.Windows.Media.Color.FromRgb(0, 202, 114) : System.Windows.Media.Color.FromRgb(160, 116, 229)), 
+                            Foreground = System.Windows.Media.Brushes.White, 
+                            Cursor = isInstalled ? System.Windows.Input.Cursors.Arrow : System.Windows.Input.Cursors.Hand, 
+                            HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Padding = new Thickness(10,0,10,0), Style = (Style)FindResource("CyberActionButtonStyle"),
+                            IsEnabled = !isInstalled // 🌟 如果已安装，直接禁用按钮，防误触，防文件锁定报错！
+                        };
+                        if (!isInstalled) btnDownload.Click += async (s, ev) => await DownloadPluginAsync(p.DownloadUrl, p.Name, btnDownload);
                         
                         sp.Children.Add(btnDownload); border.Child = sp; OnlinePluginListContainer.Children.Add(border);
                     }
@@ -2173,17 +2395,47 @@ namespace SuperWorkspace
         // ==========================================
         private void Btn_ZeroCablePairing_Click(object sender, RoutedEventArgs e)
         {
-            // 🌟 动态构建极客风的双模态无线配对面板
+            // 🌟 动态构建极客风的双模态无线配对面板 (无边框 + 沉浸式圆角)
             var pairWindow = new Window {
                 Title = "Android 11+ 隔空双擎握手",
-                Width = 480, Height = 560,
-                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(26, 26, 36)),
+                Width = 480, Height = 580,
+                Background = System.Windows.Media.Brushes.Transparent,
+                WindowStyle = WindowStyle.None,
+                AllowsTransparency = true,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this,
                 ResizeMode = ResizeMode.NoResize
             };
 
-            var mainStack = new System.Windows.Controls.StackPanel { Margin = new Thickness(25) };
+            var cyberBtnStyle = (Style)FindResource("CyberActionButtonStyle");
+
+            var outerBorder = new System.Windows.Controls.Border {
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(26, 26, 36)),
+                CornerRadius = new CornerRadius(12),
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(60, 60, 65)),
+                BorderThickness = new Thickness(1)
+            };
+
+            var windowGrid = new System.Windows.Controls.Grid();
+            windowGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+            windowGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            // 🌟 沉浸式定制标题栏
+            var titleBar = new System.Windows.Controls.Grid { Height = 40, Background = System.Windows.Media.Brushes.Transparent };
+            titleBar.MouseLeftButtonDown += (s, ev) => { if (ev.ButtonState == System.Windows.Input.MouseButtonState.Pressed) pairWindow.DragMove(); };
+            var titleText = new System.Windows.Controls.TextBlock { Text = "Android 11+ 隔空双擎握手", Foreground = System.Windows.Media.Brushes.Gray, FontSize = 12, VerticalAlignment = System.Windows.VerticalAlignment.Center, HorizontalAlignment = System.Windows.HorizontalAlignment.Left, Margin = new Thickness(15,0,0,0) };
+            var closeBtn = new System.Windows.Controls.Button { Content = "❌", Foreground = System.Windows.Media.Brushes.Gray, Background = System.Windows.Media.Brushes.Transparent, BorderThickness = new Thickness(0), Style = cyberBtnStyle, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, VerticalAlignment = System.Windows.VerticalAlignment.Center, Margin = new Thickness(0,0,10,0), Width = 30, Height = 30, FontSize = 12 };
+            closeBtn.Click += (s, ev) => pairWindow.Close();
+            titleBar.Children.Add(titleText);
+            titleBar.Children.Add(closeBtn);
+            System.Windows.Controls.Grid.SetRow(titleBar, 0);
+            windowGrid.Children.Add(titleBar);
+
+            var mainStack = new System.Windows.Controls.StackPanel { Margin = new Thickness(25, 0, 25, 25) };
+            System.Windows.Controls.Grid.SetRow(mainStack, 1);
+            windowGrid.Children.Add(mainStack);
+            outerBorder.Child = windowGrid;
+
             mainStack.Children.Add(new System.Windows.Controls.TextBlock { Text = "📶 隔空握手 (Zero-Cable)", Foreground = System.Windows.Media.Brushes.White, FontSize = 20, FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,15) });
 
             // 🌟 双模态顶部切换器 (Segment Control)
@@ -2191,8 +2443,8 @@ namespace SuperWorkspace
             segmentGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
             segmentGrid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition());
 
-            var btnModeCode = new System.Windows.Controls.Button { Content = "🔑 极客配对码 (当前稳定)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand };
-            var btnModeQr = new System.Windows.Controls.Button { Content = "📷 扫码直连 (研发中)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.Gray, BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand };
+            var btnModeCode = new System.Windows.Controls.Button { Content = "🔑 极客配对码 (当前稳定)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, Style = cyberBtnStyle, Margin = new Thickness(0,0,5,0) };
+            var btnModeQr = new System.Windows.Controls.Button { Content = "📷 扫码直连 (研发中)", Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.Gray, Style = cyberBtnStyle, Margin = new Thickness(5,0,0,0) };
             
             System.Windows.Controls.Grid.SetColumn(btnModeCode, 0);
             System.Windows.Controls.Grid.SetColumn(btnModeQr, 1);
@@ -2211,8 +2463,8 @@ namespace SuperWorkspace
             ipPortLabelPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             ipPortLabelPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
             
-            var lblIpPort = new System.Windows.Controls.TextBlock { Text = "1. 配对 IP 与端口", Foreground = System.Windows.Media.Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-            var btnAutoDetect = new System.Windows.Controls.Button { Content = "🔍 局域网自动探测", Background = System.Windows.Media.Brushes.Transparent, Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)), BorderThickness = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand, FontSize = 12 };
+            var lblIpPort = new System.Windows.Controls.TextBlock { Text = "1. 配对 IP 与端口", Foreground = System.Windows.Media.Brushes.White, VerticalAlignment = System.Windows.VerticalAlignment.Center };
+            var btnAutoDetect = new System.Windows.Controls.Button { Content = "🔍 局域网自动探测", Background = System.Windows.Media.Brushes.Transparent, Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 191, 255)), Style = cyberBtnStyle, FontSize = 12, Padding = new Thickness(5,2,5,2) };
             
             System.Windows.Controls.Grid.SetColumn(lblIpPort, 0);
             System.Windows.Controls.Grid.SetColumn(btnAutoDetect, 1);
@@ -2220,15 +2472,21 @@ namespace SuperWorkspace
             ipPortLabelPanel.Children.Add(btnAutoDetect);
             codePanel.Children.Add(ipPortLabelPanel);
 
-            var txtIpPort = new System.Windows.Controls.TextBox { Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.White, FontSize = 16, Margin = new Thickness(0, 0, 0, 15), Padding = new Thickness(5) };
-            codePanel.Children.Add(txtIpPort);
+            // 🌟 圆角化的输入框
+            var txtIpPortBorder = new System.Windows.Controls.Border { CornerRadius = new CornerRadius(6), Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Margin = new Thickness(0, 0, 0, 15), Padding = new Thickness(10, 8, 10, 8) };
+            var txtIpPort = new System.Windows.Controls.TextBox { Background = System.Windows.Media.Brushes.Transparent, Foreground = System.Windows.Media.Brushes.White, FontSize = 16, BorderThickness = new Thickness(0), VerticalAlignment = System.Windows.VerticalAlignment.Center };
+            txtIpPortBorder.Child = txtIpPort;
+            codePanel.Children.Add(txtIpPortBorder);
             
             var txtCodeLabel = new System.Windows.Controls.TextBlock { Text = "2. 6位 WLAN 配对码", Foreground = System.Windows.Media.Brushes.White };
             codePanel.Children.Add(txtCodeLabel);
-            var txtCode = new System.Windows.Controls.TextBox { Height = 35, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Foreground = System.Windows.Media.Brushes.White, FontSize = 16, Margin = new Thickness(0, 5, 0, 20), MaxLength = 6, Padding = new Thickness(5) };
-            codePanel.Children.Add(txtCode);
+            
+            var txtCodeBorder = new System.Windows.Controls.Border { CornerRadius = new CornerRadius(6), Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 45)), Margin = new Thickness(0, 5, 0, 20), Padding = new Thickness(10, 8, 10, 8) };
+            var txtCode = new System.Windows.Controls.TextBox { Background = System.Windows.Media.Brushes.Transparent, Foreground = System.Windows.Media.Brushes.White, FontSize = 16, BorderThickness = new Thickness(0), VerticalAlignment = System.Windows.VerticalAlignment.Center, MaxLength = 6 };
+            txtCodeBorder.Child = txtCode;
+            codePanel.Children.Add(txtCodeBorder);
 
-            var btnAction = new System.Windows.Controls.Button { Content = "🚀 第一步：发起底层授权握手", Height = 45, FontSize = 14, FontWeight = FontWeights.Bold, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Foreground = System.Windows.Media.Brushes.White, Cursor = System.Windows.Input.Cursors.Hand };
+            var btnAction = new System.Windows.Controls.Button { Content = "🚀 第一步：发起底层授权握手", Height = 45, FontSize = 14, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 116, 229)), Style = cyberBtnStyle };
             var txtLog = new System.Windows.Controls.TextBlock { Foreground = System.Windows.Media.Brushes.Gray, Margin = new Thickness(0, 15, 0, 0), TextWrapping = TextWrapping.Wrap };
             
             bool isPairingPhase = true;
@@ -2275,7 +2533,7 @@ namespace SuperWorkspace
                                 txtLog.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
                                 isPairingPhase = false;
                                 txtCodeLabel.Visibility = Visibility.Collapsed;
-                                txtCode.Visibility = Visibility.Collapsed;
+                                txtCodeBorder.Visibility = Visibility.Collapsed;
                                 btnAction.Content = "🔗 第二步：建立最终控制链路";
                                 btnAction.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 202, 114));
                                 string ip = ipPort.Split(':')[0];
@@ -2364,7 +2622,7 @@ namespace SuperWorkspace
 
             mainStack.Children.Add(codePanel);
             mainStack.Children.Add(qrPanel);
-            pairWindow.Content = mainStack;
+            pairWindow.Content = outerBorder; // 🌟 挂载自定义无边框边框！
             pairWindow.ShowDialog();
         }
 

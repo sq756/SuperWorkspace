@@ -1,9 +1,15 @@
 [Setup]
+; 🌟 唯一标识符：确保以后更新版本时，能精准覆盖旧版，不会在控制面板出现两个软件！
+AppId={{9A2B45A8-F7C1-4D99-A6E3-128CD5348F2A}
 ; 软件基本信息
 AppName=Super Workspace 扩展坞
-AppVersion=1.2.28
+AppVersion=1.2.31
 AppPublisher=Commander sq756 Studio
 AppCopyright=Copyright (C) 2026 Commander Studio
+
+; 🌟 强制 64 位模式：因为我们编译的是 win-x64，必须让它安装到原生的 Program Files！
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 
 ; 默认安装到 C:\Program Files\SuperWorkspace
 DefaultDirName={autopf}\SuperWorkspace
@@ -11,7 +17,7 @@ DefaultGroupName=Super Workspace
 
 ; 生成的安装包存放位置和名字
 OutputDir=.\SetupBuild\Output
-OutputBaseFilename=SuperWorkspace_Installer_v1.2.28
+OutputBaseFilename=SuperWorkspace_Installer_v1.2.31
 SetupIconFile=.\SetupBuild\ico.ico
 
 ; 极客压缩算法，把体积压到极致
